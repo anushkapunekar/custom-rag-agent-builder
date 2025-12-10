@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+backend/venv/
+
+# Environment variables
+.env
+*.env
+
+# Build artifacts
+dist/
+build/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# RAG storage
+backend/app/storage/
+backend/storage/
+storage/
+
+# Sensitive files
+backend/app/credentials/
+*.json
+
+# Models
+*.bin
+*.pt
+*.pth
+*.ckpt
+
+# HuggingFace cache
+huggingface/
+~/.cache/huggingface/
