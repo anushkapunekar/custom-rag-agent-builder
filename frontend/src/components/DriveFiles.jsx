@@ -21,23 +21,49 @@ export default function DriveFiles({ jwt, gToken }) {
   }
 
   // 🔥 Open Google Drive Picker
+// snippet inside src/components/DriveFiles.jsx — replace openPicker/buildPicker section with this:
+
+  // get token from props or localStorage
+  function getGToken() {
+    return gToken || localStorage.getItem("gToken") || localStorage.getItem("g_access_token");
+  }
+
   const openPicker = () => {
-    if (!gToken) return alert("Missing Google Drive token!");
+    const token = getGToken();
+    if (!API_KEY) return alert("Missing Google developer API key (VITE_GOOGLE_API_KEY).");
+    if (!token) {
+      return alert(
+        "Missing Google Drive token. Make sure you have completed Google login and the backend callback stored the token. " +
+        "If you just authorized, refresh the app once."
+      );
+    }
 
-    window.gapi.load("picker", () => {
-      const view = new window.google.picker.DocsView()
-        .setIncludeFolders(true)
-        .setSelectFolderEnabled(false);
+    // ensure gapi loaded
+    if (!window.gapi || !window.google?.picker) {
+      const script = document.createElement("script");
+      script.src = "https://apis.google.com/js/api.js";
+      script.onload = () => window.gapi.load("picker", () => buildPicker(token));
+      document.body.appendChild(script);
+      return;
+    }
 
-      const picker = new window.google.picker.PickerBuilder()
-        .setOAuthToken(gToken)
-        .setDeveloperKey(API_KEY)
-        .addView(view)
-        .setCallback(onPicked)
-        .build();
+    window.gapi.load("picker", () => buildPicker(token));
+  };
 
-      picker.setVisible(true);
-    });
+  const buildPicker = (token) => {
+    const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+      .setIncludeFolders(true)
+      .setSelectFolderEnabled(false);
+
+    const picker = new window.google.picker.PickerBuilder()
+      .setDeveloperKey(API_KEY)
+      .setOAuthToken(token)
+      .addView(view)
+      .setCallback(onPicked)
+      .setTitle("Select Google Drive files to index")
+      .build();
+
+    picker.setVisible(true);
   };
 
   const onPicked = async (data) => {

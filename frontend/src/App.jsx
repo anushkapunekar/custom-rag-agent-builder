@@ -2,16 +2,22 @@
 import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import Chat from "./components/Chat";
+import AgentChat from "./components/AgentChat";
 import DriveFiles from "./components/DriveFiles";
 import { authGoogleLoginUrl } from "./api/api";
 
 export default function App() {
   const [jwt, setJwt] = useState(localStorage.getItem("jwt"));
   const [gToken, setGToken] = useState(localStorage.getItem("gToken"));
+
+  // 🌟 Main UI states
   const [view, setView] = useState("chat"); 
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [selectedAgent, setSelectedAgent] = useState(null);
 
-  // 🔥 FIXED LOGIN CALLBACK — HANDLES TOKENS FROM BACKEND
+  // ---------------------------
+  // HANDLE GOOGLE LOGIN CALLBACK
+  // ---------------------------
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.substring(1));
     const jwtToken = hash.get("jwt");
@@ -44,8 +50,13 @@ export default function App() {
     localStorage.clear();
     setJwt(null);
     setGToken(null);
+    setSelectedAgent(null);
+    setSelectedDoc(null);
   }
 
+  // ---------------------------
+  // LOGIN PAGE
+  // ---------------------------
   if (!jwt) {
     return (
       <div style={{
@@ -64,13 +75,32 @@ export default function App() {
     );
   }
 
+  // ---------------------------
+  // LOGGED IN UI
+  // ---------------------------
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-      
-      <Sidebar setView={setView} jwt={jwt} onSelectDoc={setSelectedDoc} />
 
+      {/* SIDEBAR */}
+    <Sidebar
+  jwt={jwt}
+  setView={setView}   // <-- REQUIRED!
+  onSelectDoc={(doc) => {
+    setSelectedAgent(null);
+    setSelectedDoc(doc);
+    setView("chat");
+  }}
+  onSelectAgent={(agent) => {
+    setSelectedDoc(null);
+    setSelectedAgent(agent);
+    setView("agent");
+  }}
+/>
+
+      {/* MAIN PANEL */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        {/* Header */}
+
+        {/* HEADER */}
         <div style={{
           padding: 10,
           borderBottom: "1px solid #eee",
@@ -78,20 +108,31 @@ export default function App() {
           justifyContent: "space-between"
         }}>
           <div>
-            {selectedDoc ? `📄 ${selectedDoc.name}` : "Ask your documents"}
+            {selectedAgent
+              ? `🤖 Agent: ${selectedAgent.name}`
+              : selectedDoc
+                ? `📄 ${selectedDoc.name}`
+                : "Ask your knowledge base"}
           </div>
 
-          <div>
-            <button onClick={logout} style={{ padding: 6, borderRadius: 6 }}>
-              Logout
-            </button>
-          </div>
+          <button onClick={logout} style={{ padding: 6, borderRadius: 6 }}>
+            Logout
+          </button>
         </div>
 
-        {/* Views */}
-        {view === "chat" && <Chat jwt={jwt} selectedDoc={selectedDoc} />}
-        {view === "docs" && <DriveFiles jwt={jwt} gToken={gToken} />}
-        {view === "upload" && <DriveFiles jwt={jwt} gToken={gToken} />}
+        {/* VIEWS */}
+        {view === "chat" && (
+          <Chat jwt={jwt} selectedDoc={selectedDoc} />
+        )}
+
+        {view === "agent" && selectedAgent && (
+          <AgentChat jwt={jwt} agent={selectedAgent} />
+        )}
+
+        {(view === "docs" || view === "upload") && (
+          <DriveFiles jwt={jwt} gToken={gToken} />
+        )}
+
       </div>
     </div>
   );

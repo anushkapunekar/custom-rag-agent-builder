@@ -11,7 +11,8 @@ from .auth import router as auth_router
 from .drive import router as drive_router
 from .retriever import router as qa_router
 from .maintenance import router as maintenance_router
-# NEW: chat history router
+from .agents import router as agents_router
+
 try:
     from .chat_history import router as chat_router
 except Exception as e:
@@ -38,6 +39,9 @@ app.include_router(maintenance_router)
 # Only include chat router if import succeeded
 if chat_router:
     app.include_router(chat_router)
+
+if agents_router:
+    app.include_router(agents_router)    
 
 @app.get("/")
 def root():

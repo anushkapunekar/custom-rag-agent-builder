@@ -95,6 +95,9 @@ def load_user_index(user_id: str):
 # ============================================================
 # SEARCH
 # ============================================================
+# ============================================================
+# SEARCH (supports normal RAG + AGENT RAG)
+# ============================================================
 def search(query: str, k: int, vectors, meta, doc_filter=None):
 
     q_vec = EMBED_MODEL.encode(query, convert_to_numpy=True, normalize_embeddings=True)
@@ -106,10 +109,23 @@ def search(query: str, k: int, vectors, meta, doc_filter=None):
     for i in topk_idx:
         m = meta[i]
 
-        # filter by doc if needed
-        if doc_filter and m.get("docId") != doc_filter:
-            continue
+        # -------------------------------
+        # NEW AGENT-AWARE FILTERING
+        # Allows docId formats like:
+        #   "fileId"
+        #   "agentId:fileId"
+        # -------------------------------
+        if doc_filter:
+            md = m.get("docId", "")
+            # agent chunks are saved as "agentId:realDocId"
+            if md and str(md).startswith(f"{doc_filter}:"):
+                pass  # allow this chunk
+            else:
+                continue  # skip chunks not belonging to this agent
 
+        # -------------------------------
+        # Normal chunk acceptance
+        # -------------------------------
         results.append({
             "score": float(sims[i]),
             "text": m["text"],
