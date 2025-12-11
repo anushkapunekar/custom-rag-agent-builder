@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import Chat from "./components/Chat";
-import AgentChat from "./components/AgentChat";
+import AgentWorkspace from "./components/AgentWorkspace";
+import AgentsPage from "./pages/AgentsPage";
 import DriveFiles from "./components/DriveFiles";
 import { authGoogleLoginUrl } from "./api/api";
 
@@ -10,14 +11,11 @@ export default function App() {
   const [jwt, setJwt] = useState(localStorage.getItem("jwt"));
   const [gToken, setGToken] = useState(localStorage.getItem("gToken"));
 
-  // 🌟 Main UI states
-  const [view, setView] = useState("chat"); 
+  const [view, setView] = useState("chat");  
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [selectedAgent, setSelectedAgent] = useState(null);
 
-  // ---------------------------
-  // HANDLE GOOGLE LOGIN CALLBACK
-  // ---------------------------
+  // LOGIN CALLBACK
   useEffect(() => {
     const hash = new URLSearchParams(window.location.hash.substring(1));
     const jwtToken = hash.get("jwt");
@@ -50,13 +48,8 @@ export default function App() {
     localStorage.clear();
     setJwt(null);
     setGToken(null);
-    setSelectedAgent(null);
-    setSelectedDoc(null);
   }
 
-  // ---------------------------
-  // LOGIN PAGE
-  // ---------------------------
   if (!jwt) {
     return (
       <div style={{
@@ -75,27 +68,24 @@ export default function App() {
     );
   }
 
-  // ---------------------------
-  // LOGGED IN UI
-  // ---------------------------
   return (
     <div style={{ display: "flex", height: "100vh" }}>
 
       {/* SIDEBAR */}
-    <Sidebar
-  jwt={jwt}
-  setView={setView}   // <-- REQUIRED!
-  onSelectDoc={(doc) => {
-    setSelectedAgent(null);
-    setSelectedDoc(doc);
-    setView("chat");
-  }}
-  onSelectAgent={(agent) => {
-    setSelectedDoc(null);
-    setSelectedAgent(agent);
-    setView("agent");
-  }}
-/>
+      <Sidebar
+        jwt={jwt}
+        setView={setView}
+        onSelectDoc={(doc) => {
+          setSelectedAgent(null);
+          setSelectedDoc(doc);
+          setView("chat");
+        }}
+          onSelectAgent={(agent) => {
+           setSelectedDoc(null);
+           setSelectedAgent(agent);
+          setView("agent");
+          }}
+      />
 
       {/* MAIN PANEL */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -112,7 +102,9 @@ export default function App() {
               ? `🤖 Agent: ${selectedAgent.name}`
               : selectedDoc
                 ? `📄 ${selectedDoc.name}`
-                : "Ask your knowledge base"}
+                : view === "agents"
+                  ? "Your Agents"
+                  : "Ask your knowledge base"}
           </div>
 
           <button onClick={logout} style={{ padding: 6, borderRadius: 6 }}>
@@ -120,19 +112,29 @@ export default function App() {
           </button>
         </div>
 
-        {/* VIEWS */}
-        {view === "chat" && (
-          <Chat jwt={jwt} selectedDoc={selectedDoc} />
+        {/* ROUTING VIEWS */}
+        {view === "chat" && <Chat jwt={jwt} selectedDoc={selectedDoc} />}
+
+        {view === "docs" && <DriveFiles jwt={jwt} gToken={gToken} />}
+        {view === "upload" && <DriveFiles jwt={jwt} gToken={gToken} />}
+
+        {view === "agents" && (
+          <AgentsPage 
+            jwt={jwt} 
+            onOpenAgent={(agent) => { 
+              setSelectedAgent(agent);
+              setView("agent");
+            }}
+          />
         )}
 
         {view === "agent" && selectedAgent && (
-          <AgentChat jwt={jwt} agent={selectedAgent} />
+          <AgentWorkspace 
+            jwt={jwt} 
+            agent={selectedAgent}
+            onBack={() => { setView("agents"); setSelectedAgent(null); }}
+          />
         )}
-
-        {(view === "docs" || view === "upload") && (
-          <DriveFiles jwt={jwt} gToken={gToken} />
-        )}
-
       </div>
     </div>
   );

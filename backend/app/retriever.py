@@ -8,6 +8,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 from .auth import decode_token, get_user_by_id
+from .rag_utils import build_and_save_index
 
 router = APIRouter(prefix="/qa", tags=["qa"])
 
@@ -223,7 +224,12 @@ async def generate_answer(request: Request, authorization: str = Header(None)):
 
     query = body.get("query")
     k = int(body.get("k", 5))
-    max_new_tokens = min(int(body.get("max_new_tokens", 64)), 256)
+    raw_mnt = body.get("max_new_tokens", 64)
+    try:
+        max_new_tokens = int(raw_mnt) if raw_mnt is not None else 64
+    except (ValueError, TypeError):
+        max_new_tokens = 64
+    max_new_tokens = min(max_new_tokens, 256)
     docId = body.get("docId")  # optional: restrict retrieval to one doc
     save_memory = body.get("save_memory", True)  # default: auto-save enabled
 
@@ -288,7 +294,12 @@ async def generate_answer(request: Request, authorization: str = Header(None)):
             if max_sim < SIMILARITY_THRESHOLD:
                 # append to index using your existing helper (it supports doc_id & filename)
                 # NOTE: build_and_save_index will chunk/encode and append
-                added_chunks = build_and_save_index(user_id, synthetic_text, doc_id=synthetic_doc_id, filename="__synthetic__")
+                added_chunks = build_and_save_index(
+    user_id,
+    synthetic_text,
+    doc_id=synthetic_doc_id,
+    filename="__synthetic__"
+)
                 memory_saved = True
                 memory_doc_id = synthetic_doc_id
             else:

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, HttpRequest
 
 import fitz
 import docx
@@ -20,7 +20,7 @@ from pptx import Presentation
 
 from .auth import decode_token, get_user_by_id
 from .utils import decrypt_json, ensure_user_dir
-from .rag_utils import build_and_save_index   # MUST support doc_id, filename
+from .rag_utils import build_and_save_index   # MUST support full_text, doc_id, filename
 
 router = APIRouter(prefix="/drive", tags=["drive"])
 
@@ -151,37 +151,79 @@ async def download_and_index(request: Request, authorization: str = Header(None)
     total_chunks = 0
 
     for fid in file_ids:
-        # Download
-        req = service.files().get_media(fileId=fid)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, req)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
+        # -----------------------
+        # first get metadata
+        # -----------------------
+        try:
+            meta = service.files().get(fileId=fid, fields="id,name,mimeType").execute()
+        except Exception as e:
+            # skip this file but continue with others
+            print(f"Failed to fetch metadata for {fid}: {e}")
+            continue
 
-        content = fh.getvalue()
-
-        # Metadata
-        meta = service.files().get(fileId=fid, fields="id,name,mimeType").execute()
         fname = meta.get("name") or f"{fid}"
         mime = meta.get("mimeType", "")
 
+        # -----------------------
+        # choose download method
+        # -----------------------
+        try:
+            if mime == "application/vnd.google-apps.document":
+                # export Google Doc as plain text
+                request_obj: HttpRequest = service.files().export_media(fileId=fid, mimeType="text/plain")
+            elif mime == "application/vnd.google-apps.spreadsheet":
+                # export sheet as CSV
+                request_obj = service.files().export_media(fileId=fid, mimeType="text/csv")
+            elif mime == "application/vnd.google-apps.presentation":
+                # export slides as plain text (best-effort)
+                request_obj = service.files().export_media(fileId=fid, mimeType="text/plain")
+            else:
+                request_obj = service.files().get_media(fileId=fid)
+        except Exception as e:
+            print(f"Error preparing download for {fid} ({mime}): {e}")
+            continue
+
+        # -----------------------
+        # download content
+        # -----------------------
+        fh = io.BytesIO()
+        try:
+            downloader = MediaIoBaseDownload(fh, request_obj)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+        except Exception as e:
+            # some files (e.g. Google Forms or non-downloadable) may fail — skip
+            print(f"Download failed for {fid}: {e}")
+            continue
+
+        content = fh.getvalue()
+
+        # save raw file to user's docs dir (keep safe filename)
         safe_name = f"{fid}-{fname}"
         fpath = docs_dir / safe_name
-        fpath.write_bytes(content)
+        try:
+            fpath.write_bytes(content)
+        except Exception as e:
+            print(f"Failed writing file {fpath}: {e}")
 
-        # Extract
+        # Extract text from bytes
         extracted = extract_text_from_bytes(content, fname, mime)
 
-        # Build index (per-document)
-        added = build_and_save_index(
-            user_id=user["id"],
-            text=extracted,
-            doc_id=fid,
-            filename=fname
-        )
-        total_chunks += added
+        # Build index (per-document) — use correct parameter names matching rag_utils
+        try:
+            added = build_and_save_index(
+                user_id=user["id"],
+                full_text=extracted,
+                doc_id=fid,
+                filename=fname
+            )
+        except Exception as e:
+            print(f"Indexing failed for {fname}: {e}")
+            # continue to next file rather than crash everything
+            continue
 
+        total_chunks += added
         uploaded.append({"id": fid, "name": fname})
 
     return {
@@ -231,5 +273,3 @@ def list_docs(authorization: str = Header(None)):
         })
 
     return {"docs": docs}
-
-

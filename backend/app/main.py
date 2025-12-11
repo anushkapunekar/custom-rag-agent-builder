@@ -36,12 +36,11 @@ app.include_router(drive_router)
 app.include_router(qa_router)
 app.include_router(index_router)
 app.include_router(maintenance_router)
+app.include_router(agents_router)    
 # Only include chat router if import succeeded
 if chat_router:
     app.include_router(chat_router)
-
-if agents_router:
-    app.include_router(agents_router)    
+   
 
 @app.get("/")
 def root():
