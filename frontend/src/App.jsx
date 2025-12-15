@@ -11,9 +11,14 @@ export default function App() {
   const [jwt, setJwt] = useState(localStorage.getItem("jwt"));
   const [gToken, setGToken] = useState(localStorage.getItem("gToken"));
 
-  const [view, setView] = useState("chat");  
-  const [selectedDoc, setSelectedDoc] = useState(null);
-  const [selectedAgent, setSelectedAgent] = useState(null);
+  // 🔥 RESTORE VIEW + SELECTION FROM STORAGE
+  const [view, setView] = useState(localStorage.getItem("view") || "chat");
+  const [selectedDoc, setSelectedDoc] = useState(
+    JSON.parse(localStorage.getItem("selectedDoc") || "null")
+  );
+  const [selectedAgent, setSelectedAgent] = useState(
+    JSON.parse(localStorage.getItem("selectedAgent") || "null")
+  );
 
   // LOGIN CALLBACK
   useEffect(() => {
@@ -39,6 +44,19 @@ export default function App() {
       window.history.replaceState({}, document.title, "/");
     }
   }, []);
+
+  // 🔥 SYNC STATE → localStorage
+  useEffect(() => {
+    localStorage.setItem("view", view);
+  }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem("selectedAgent", JSON.stringify(selectedAgent));
+  }, [selectedAgent]);
+
+  useEffect(() => {
+    localStorage.setItem("selectedDoc", JSON.stringify(selectedDoc));
+  }, [selectedDoc]);
 
   function login() {
     window.location.href = authGoogleLoginUrl();
@@ -70,26 +88,27 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-
       {/* SIDEBAR */}
       <Sidebar
         jwt={jwt}
-        setView={setView}
+        setView={(v) => {
+          setView(v);
+          localStorage.setItem("view", v);
+        }}
         onSelectDoc={(doc) => {
           setSelectedAgent(null);
           setSelectedDoc(doc);
           setView("chat");
         }}
-          onSelectAgent={(agent) => {
-           setSelectedDoc(null);
-           setSelectedAgent(agent);
+        onSelectAgent={(agent) => {
+          setSelectedDoc(null);
+          setSelectedAgent(agent);
           setView("agent");
-          }}
+        }}
       />
 
       {/* MAIN PANEL */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-
         {/* HEADER */}
         <div style={{
           padding: 10,
@@ -112,16 +131,16 @@ export default function App() {
           </button>
         </div>
 
-        {/* ROUTING VIEWS */}
+        {/* ROUTING */}
         {view === "chat" && <Chat jwt={jwt} selectedDoc={selectedDoc} />}
 
         {view === "docs" && <DriveFiles jwt={jwt} gToken={gToken} />}
         {view === "upload" && <DriveFiles jwt={jwt} gToken={gToken} />}
 
         {view === "agents" && (
-          <AgentsPage 
-            jwt={jwt} 
-            onOpenAgent={(agent) => { 
+          <AgentsPage
+            jwt={jwt}
+            onOpenAgent={(agent) => {
               setSelectedAgent(agent);
               setView("agent");
             }}
@@ -129,10 +148,13 @@ export default function App() {
         )}
 
         {view === "agent" && selectedAgent && (
-          <AgentWorkspace 
-            jwt={jwt} 
+          <AgentWorkspace
+            jwt={jwt}
             agent={selectedAgent}
-            onBack={() => { setView("agents"); setSelectedAgent(null); }}
+            onBack={() => {
+              setSelectedAgent(null);
+              setView("agents");
+            }}
           />
         )}
       </div>

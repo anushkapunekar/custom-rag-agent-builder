@@ -1,78 +1,152 @@
 # backend/app/rag_utils.py
+
 import json
-import os
 import numpy as np
 from pathlib import Path
-from typing import Optional
+from typing import List
 from sentence_transformers import SentenceTransformer
 
 APP_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = APP_DIR / "storage"
 STORAGE_DIR.mkdir(exist_ok=True)
 
+# ============================================================
+# EMBEDDING MODEL (used everywhere)
+# ============================================================
 EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
 
-def _ensure_dir(path: Path):
-    path.mkdir(parents=True, exist_ok=True)
 
-# ------------------------------
-# Robust chunker
-# ------------------------------
-def chunk_text_strategy(text: str, strategy: str, chunk_size: int, overlap: int):
-    text = text.replace("\r\n", "\n").strip()
+# ============================================================
+# BASIC FIXED CHUNKER (DO NOT REMOVE — used by maintenance.py)
+# ============================================================
+def chunk_text(text: str, chunk_size: int = 800, overlap: int = 200) -> List[str]:
+    """
+    Fixed-size sliding window chunker.
+    This is your ORIGINAL chunker and must stay.
+    """
+    if not text:
+        return []
 
-    # FIXED SIZE CHUNKING
+    t = text.replace("\r\n", "\n")
+    chunks = []
+    n = len(t)
+    i = 0
+
+    while i < n:
+        end = min(i + chunk_size, n)
+        piece = t[i:end]
+
+        # try to break at whitespace
+        if end < n:
+            last_space = piece.rfind(" ")
+            if last_space > chunk_size * 0.5:
+                piece = piece[:last_space]
+                end = i + len(piece)
+
+        cleaned = piece.strip()
+        if cleaned:
+            chunks.append(cleaned)
+
+        i = max(end - overlap, end)
+
+    return chunks
+
+
+# ============================================================
+# 🔥 NEW: STRATEGY-BASED CHUNKER (AGENT CONFIG)
+# ============================================================
+def chunk_text_strategy(
+    text: str,
+    strategy: str = "fixed",
+    chunk_size: int = 800,
+    overlap: int = 200
+) -> List[str]:
+    """
+    Flexible chunking strategies used by agents.
+
+    Supported:
+      - fixed      → original sliding window
+      - sentences  → sentence-aware aggregation
+      - smart      → sentence-aware + merge small chunks
+
+    Returns list of chunk strings.
+    """
+    if not text:
+        return []
+
+    strategy = (strategy or "fixed").lower()
+
+    # -----------------------------
+    # FIXED (default)
+    # -----------------------------
     if strategy == "fixed":
         return chunk_text(text, chunk_size=chunk_size, overlap=overlap)
 
+    # -----------------------------
     # SENTENCE-BASED
-    if strategy == "sentence":
-        import re
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        return [s.strip() for s in sentences if s.strip()]
+    # -----------------------------
+    import re
 
-    # PARAGRAPH-BASED
-    if strategy == "paragraph":
-        paragraphs = text.split("\n\n")
-        return [p.strip() for p in paragraphs if p.strip()]
+    sentences = re.split(
+        r'(?<=[\.\!\?])\s+',
+        text.replace("\r\n", "\n")
+    )
 
-    # SEMANTIC CHUNKING (simple clustering)
-    if strategy == "semantic":
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        sentences = text.split(". ")
-        embeds = model.encode(sentences)
-        chunks = []
-        current = sentences[0]
+    chunks = []
+    current = ""
 
-        for i in range(1, len(sentences)):
-            sim = np.dot(embeds[i], embeds[i-1])
-            if sim > 0.6:
-                current += ". " + sentences[i]
-            else:
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent:
+            continue
+
+        if len(current) + len(sent) + 1 <= chunk_size:
+            current = f"{current} {sent}".strip()
+        else:
+            if current:
                 chunks.append(current)
-                current = sentences[i]
+            # fallback to fixed chunking if sentence is huge
+            if len(sent) > chunk_size:
+                chunks.extend(chunk_text(sent, chunk_size, overlap))
+                current = ""
+            else:
+                current = sent
 
+    if current:
         chunks.append(current)
-        return [c.strip() for c in chunks if c.strip()]
 
-    # FALLBACK
-    return chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+    # -----------------------------
+    # SMART (merge small chunks)
+    # -----------------------------
+    if strategy == "smart":
+        merged = []
+        buffer = ""
 
+        for c in chunks:
+            if not buffer:
+                buffer = c
+            elif len(buffer) + len(c) + 1 <= chunk_size:
+                buffer = buffer + "\n" + c
+            else:
+                merged.append(buffer)
+                buffer = c
 
-def _safe_json_load(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return json.loads(path.read_text(errors="ignore"))
+        if buffer:
+            merged.append(buffer)
+
+        return merged
+
+    return chunks
 
 
 # ============================================================
-#  GLOBAL USER INDEX (your original working RAG)
+# GLOBAL USER INDEX (CUSTOM RAG)
 # ============================================================
 def build_and_save_index(user_id, full_text, doc_id=None, filename=None):
     """
-    Saves into: storage/<user_id>/embeddings.npy + meta.json
+    Saves embeddings into:
+      storage/<user_id>/embeddings.npy
+      storage/<user_id>/meta.json
     """
     user_dir = STORAGE_DIR / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -84,52 +158,57 @@ def build_and_save_index(user_id, full_text, doc_id=None, filename=None):
     if not chunks:
         return 0
 
-    vectors = EMBED_MODEL.encode(chunks, convert_to_numpy=True, normalize_embeddings=True)
+    vectors = EMBED_MODEL.encode(
+        chunks,
+        convert_to_numpy=True,
+        normalize_embeddings=True
+    )
 
-    # append or create
     if emb_path.exists():
         existing = np.load(emb_path)
-        combined = np.vstack([existing, vectors]) if existing.size else vectors
-    else:
-        combined = vectors
+        vectors = np.vstack([existing, vectors]) if existing.size else vectors
 
-    np.save(emb_path, combined)
+    np.save(emb_path, vectors)
 
-    metas_new = [{
-        "text": c,
-        "docId": doc_id or "",
-        "filename": filename or ""
-    } for c in chunks]
+    metas_new = [
+        {
+            "text": c,
+            "docId": doc_id or "",
+            "filename": filename or ""
+        }
+        for c in chunks
+    ]
 
     if meta_path.exists():
-        prev = json.loads(meta_path.read_text(encoding="utf-8"))
-        metas = prev + metas_new
+        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
+        meta.extend(metas_new)
     else:
-        metas = metas_new
+        meta = metas_new
 
-    meta_path.write_text(json.dumps(metas, ensure_ascii=False, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
     return len(chunks)
 
 
 # ============================================================
-#  AGENT-SPECIFIC INDEX SUPPORT (NEW)
+# AGENT-SPECIFIC INDEX (PER AGENT)
 # ============================================================
-def build_and_save_index_to_dir(user_id, full_text, target_dir: Path, doc_id: str = None, filename: str = None):
+def build_and_save_index_to_dir(
+    user_id,
+    full_text,
+    target_dir: Path,
+    doc_id: str = None,
+    filename: str = None
+):
     """
-    Build embeddings from `full_text` and append them into an index stored inside `target_dir`.
-    This creates (or appends to) target_dir/embeddings.npy and target_dir/meta.json.
-
-    Args:
-      user_id: for bookkeeping (not used to pick location — target_dir is authoritative)
-      full_text: raw extracted text to chunk
-      target_dir: Path object where embeddings.npy + meta.json live (will be created)
-      doc_id: optional doc id (we store this in metadata)
-      filename: original filename for metadata
-    Returns:
-      number_of_chunks_added (int)
+    Saves embeddings inside agent directory:
+      storage/<user>/agents/<agent>/embeddings.npy
+      storage/<user>/agents/<agent>/meta.json
     """
-    _ensure_dir(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     emb_path = target_dir / "embeddings.npy"
     meta_path = target_dir / "meta.json"
@@ -138,43 +217,43 @@ def build_and_save_index_to_dir(user_id, full_text, target_dir: Path, doc_id: st
     if not chunks:
         return 0
 
-    # embed chunks
-    vectors = EMBED_MODEL.encode(chunks, convert_to_numpy=True, normalize_embeddings=True)
+    vectors = EMBED_MODEL.encode(
+        chunks,
+        convert_to_numpy=True,
+        normalize_embeddings=True
+    )
 
-    # append or create embeddings file
     if emb_path.exists():
         existing = np.load(emb_path)
-        combined = np.vstack([existing, vectors]) if existing.size else vectors
-    else:
-        combined = vectors
+        vectors = np.vstack([existing, vectors]) if existing.size else vectors
 
-    np.save(emb_path, combined)
+    np.save(emb_path, vectors)
 
-    # build metadata list
-    metas_new = []
-    for c in chunks:
-        metas_new.append({
+    metas_new = [
+        {
             "text": c,
             "docId": doc_id or "",
             "filename": filename or ""
-        })
+        }
+        for c in chunks
+    ]
 
     if meta_path.exists():
-        try:
-            prev = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
-        except Exception:
-            prev = []
-        metas = prev + metas_new
+        meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
+        meta.extend(metas_new)
     else:
-        metas = metas_new
+        meta = metas_new
 
-    meta_path.write_text(json.dumps(metas, ensure_ascii=False, indent=2), encoding="utf-8")
+    meta_path.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
     return len(chunks)
 
 
 # ============================================================
-#  LOAD INDEX FROM ANY DIRECTORY (GLOBAL OR AGENT)
+# LOAD INDEX FROM ANY DIRECTORY
 # ============================================================
 def load_index_from_dir(target_dir: Path):
     emb_path = target_dir / "embeddings.npy"
@@ -184,12 +263,6 @@ def load_index_from_dir(target_dir: Path):
         raise FileNotFoundError(f"Index not found in: {target_dir}")
 
     vectors = np.load(emb_path)
-    with open(meta_path, "r", encoding="utf-8", errors="ignore") as f:
-        meta = json.load(f)
+    meta = json.loads(meta_path.read_text(encoding="utf-8", errors="ignore"))
 
     return vectors, meta
-
-# compatibility wrapper for old code
-def chunk_text(text, chunk_size=800, overlap=200):
-    # default to fixed strategy behavior
-    return chunk_text_strategy(text, "fixed", chunk_size, overlap)
