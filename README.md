@@ -1,4 +1,4 @@
-# 🧠 Custom RAG System with Multi-Agent Support
+#  Custom RAG System with Multi-Agent Support
 
 This project is a **from-scratch Retrieval-Augmented Generation (RAG) system** built using **FastAPI + React**, designed to help users chat with their own documents and create independent AI agents, each with its own knowledge base and memory.
 
@@ -6,7 +6,7 @@ The system runs **fully locally** (no vector DB yet) and stores embeddings, docu
 
 ---
 
-### 🚀 What This Project Does
+### What This Project Does
 
 #### 1. Custom RAG (Main Chat)
 * Upload documents from **Google Drive**
@@ -34,7 +34,7 @@ Agents can improve over time using:
 
 ---
 
-### 🧩 Architecture Overview
+###  Architecture Overview
 
 
 
@@ -55,7 +55,7 @@ Backend (FastAPI)
 
 ---
 
-🗂️ Storage Structure (Very Important)
+ Storage Structure (Very Important)
 This project does NOT use a vector database yet. All data is stored locally on disk:
 
 Plaintext
@@ -78,7 +78,7 @@ backend/app/storage/
 
 ---
 
-🧠 Chunking Strategies (Per Agent)
+ Chunking Strategies (Per Agent)
 Each agent can define its own chunking behavior:
 
 JSON
@@ -103,7 +103,7 @@ Additionally, if average similarity during retrieval is too low, the agent auto-
 
 ---
 
-🛠 Tech Stack
+ Tech Stack
  **Backend**:
 
 * FastAPI
@@ -144,7 +144,7 @@ Everything runs locally.
 
 ---
 
-🧭 Future Improvements (Planned):
+ Future Improvements (Planned):
 
 * Replace file-based storage with ChromaDB
 
