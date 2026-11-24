@@ -5,7 +5,6 @@ This project is a **from-scratch Retrieval-Augmented Generation (RAG) system** b
 The system runs **fully locally** (no vector DB yet) and stores embeddings, documents, and chat history on disk.
 
 ---
-
 ### What This Project Does
 
 #### 1. Custom RAG (Main Chat)
@@ -130,15 +129,15 @@ Additionally, if average similarity during retrieval is too low, the agent auto-
 
 * JWT-based backend authentication
 
-* ❌ What This Project Does NOT Use (Yet)
+* What This Project Does NOT Use (Yet)
   
-* ❌ Vector databases (Chroma, Pinecone, FAISS, etc.)
+* Vector databases (Chroma, Pinecone, FAISS, etc.)
 
-* ❌ Cloud inference
+* Cloud inference
 
-* ❌ Model fine-tuning
+* Model fine-tuning
 
-* ❌ Paid APIs (besides optional Google Drive)
+* Paid APIs (besides optional Google Drive)
 
 Everything runs locally.
 
